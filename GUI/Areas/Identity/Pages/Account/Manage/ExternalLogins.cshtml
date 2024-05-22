@@ -1,0 +1,59 @@
+﻿@page
+@model ExternalLoginsModel
+@{
+    ViewData["Title"] = "Administrere eksterne konti";
+    ViewData["ActivePage"] = ManageNavPages.ExternalLogins;
+}
+
+<partial name="_StatusMessage" for="StatusMessage" />
+@if (Model.CurrentLogins?.Count > 0)
+{
+    <h3>Tilknyttede konti</h3>
+    <table class="table">
+        <tbody>
+            @foreach (var login in Model.CurrentLogins)
+            {
+                <tr>
+                    <td id="@($"login-provider-{login.LoginProvider}")">@login.ProviderDisplayName</td>
+                    <td>
+                        @if (Model.ShowRemoveButton)
+                        {
+                            <form id="@($"remove-login-{login.LoginProvider}")" asp-page-handler="RemoveLogin" method="post">
+                                <div>
+                                    <input asp-for="@login.LoginProvider" name="LoginProvider" type="hidden" />
+                                    <input asp-for="@login.ProviderKey" name="ProviderKey" type="hidden" />
+                                    <button type="submit" class="btn btn-danger" title="Remove this @login.ProviderDisplayName login from your account">Fjern</button>
+                                </div>
+                            </form>
+                        }
+                        else
+                        {
+                            @: &nbsp;
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+@if (Model.OtherLogins?.Count > 0)
+{
+    <h4>Tilknyt følgende tjenester til din konto</h4>
+    <hr />
+    <form id="link-login-form" asp-page-handler="LinkLogin" method="post" class="form-horizontal">
+        <div id="socialLoginList">
+            <p>
+                @foreach (var provider in Model.OtherLogins)
+                {
+                    if (provider.Name == "Google")
+                    {
+                        <button id="@($"link-login-button-{provider.Name}")" type="submit" class="btn btn-outline-primary mb-2" name="provider" value="@provider.Name" title="Log ind ved brug af din @provider.DisplayName konto">
+                            <img src="https://cdn4.iconfinder.com/data/icons/logos-brands-7/512/google_logo-google_icongoogle-512.png" alt="Google logo" width="20" height="20" class="mr-2" />
+                            Google
+                        </button>
+                    }
+                }
+            </p>
+        </div>
+    </form>
+}
