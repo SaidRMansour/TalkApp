@@ -1,0 +1,5 @@
+﻿.nav-link.dropdown-toggle:hover,
+.nav-link.dropdown-toggle:focus,
+.nav-link.dropdown-toggle.show {
+    color: white !important;
+}

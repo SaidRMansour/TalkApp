@@ -1,0 +1,68 @@
+﻿@page
+@model LoginModel
+
+@{
+    ViewData["Title"] = "Log ind";
+}
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h1 class="card-title text-center">Log ind</h1>
+                    <p class="text-center">Har du ikke en konto? <a asp-page="./Register">Tilmeld dig</a></p>
+
+                    @if (Model.ExternalLogins?.Count > 0)
+                    {
+                        <div class="text-center mb-3">
+                            @foreach (var provider in Model.ExternalLogins!)
+                            {
+                                if (provider.Name == "Google")
+                                {
+                                    <form asp-page="./ExternalLogin" asp-route-returnUrl="@Model.ReturnUrl" method="post" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-primary w-100 mb-2" name="provider" value="@provider.Name" title="Log ind med din @provider.DisplayName konto">
+                                            <img src="https://cdn4.iconfinder.com/data/icons/logos-brands-7/512/google_logo-google_icongoogle-512.png" alt="Google logo" width="20" height="20" class="mr-2" />
+                                            Fortsæt med Google
+                                        </button>
+                                    </form>
+                                }
+                            }
+                        </div>
+                        <div class="text-center">
+                            <p>Eller fortsæt med brugernavn/email</p>
+                        </div>
+                    }
+
+                <form id="account" method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+                    <div class="form-floating mb-3">
+                        <input asp-for="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                        <label asp-for="Input.Email" class="form-label">Brugernavn eller email</label>
+                        <span asp-validation-for="Input.Email" class="text-danger"></span>
+                    </div>
+                    <div class="form-floating mb-3">
+                        <input asp-for="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
+                        <label asp-for="Input.Password" class="form-label">Adgangskode</label>
+                        <span asp-validation-for="Input.Password" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input asp-for="Input.RememberMe" class="form-check-input" />
+                        <label asp-for="Input.RememberMe" class="form-check-label">Husk mig</label>
+                    </div>
+                    <div class="mb-3">
+                        <a asp-page="./ForgotPassword">Glemt din adgangskode?</a>
+                    </div>
+                    <div>
+                        <button id="login-submit" type="submit" class="w-100 btn btn-lg btn-primary">Log ind</button>
+                    </div>
+                </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

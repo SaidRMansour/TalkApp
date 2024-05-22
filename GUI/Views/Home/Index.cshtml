@@ -1,0 +1,34 @@
+﻿@using Microsoft.AspNetCore.Identity
+@using GUI.Areas.Identity.Pages.Account.Manage
+
+@inject SignInManager<IdentityUser> SignInManager
+
+@{
+    ViewData["Title"] = "Forside";
+}
+
+@if (SignInManager.IsSignedIn(User))
+{
+    <div class="text-center">
+        <h1>Velkommen</h1><p>@User.Identity?.Name</p>
+        <h2>Du har nu følgende muligheder:</h2>
+        <a class="btn btn-outline-primary" href="#">Se dine chat</a>
+        <a class="btn btn-outline-primary" asp-area="Identity" asp-page="/Account/Manage/Index">Indstillinger</a>
+        <form style="padding-top:40px;" class="form-inline" asp-area="Identity" asp-page="/Account/Logout" asp-route-returnUrl="@Url.Action("Index", "Home", new { area = "" })">
+            <button type="submit" class="btn btn-outline-primary">Log ud</button>
+        </form>
+    </div>
+
+}
+else
+{
+    <div class="text-center">
+        <h1>Velkommen</h1>
+        <a class="btn btn-outline-primary" style="margin:20px;" asp-area="Identity" asp-page="/Account/Register">Opret ny konto</a>
+        <br />
+        <a class="btn btn-outline-primary" style="margin:20px;" asp-area="Identity" asp-page="/Account/Login">Log ind</a>
+
+    </div>
+}
+
+
