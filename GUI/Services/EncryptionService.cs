@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Security.Cryptography;
 
 namespace GUI.Services
@@ -7,6 +8,8 @@ namespace GUI.Services
     {
         private readonly ECDiffieHellmanCng _diffieHellman;
         private byte[] _sharedKey;
+        private byte[] _iv;
+        private byte[] _hmac;
 
         public EncryptionService()
         {
@@ -19,12 +22,37 @@ namespace GUI.Services
 
         public byte[] GetPublicKey()
         {
-            return _diffieHellman.PublicKey.ToByteArray();
+            return _diffieHellman.PublicKey.ExportSubjectPublicKeyInfo();
         }
 
         public void GenerateSharedKey(byte[] otherPublicKey)
         {
-            _sharedKey = _diffieHellman.DeriveKeyMaterial(CngKey.Import(otherPublicKey, CngKeyBlobFormat.EccPublicBlob));
+            using (var otherPartyKey = CngKey.Import(otherPublicKey, CngKeyBlobFormat.EccPublicBlob))
+            {
+                _sharedKey = _diffieHellman.DeriveKeyMaterial(otherPartyKey);
+            }
+            using (var sha256 = SHA256.Create())
+            {
+                _sharedKey = sha256.ComputeHash(_sharedKey);
+            }
+
+            // Convert the byte array to a readable string (Base64)
+            string sharedKeyBase64 = Convert.ToBase64String(_sharedKey);
+            Console.WriteLine("Shared key (Base64): " + sharedKeyBase64);
+
+            // Convert the byte array to a readable string (Hexadecimal)
+            string sharedKeyHex = BitConverter.ToString(_sharedKey).Replace("-", "");
+            Console.WriteLine("Shared key (Hex): " + sharedKeyHex);
+        }
+
+        public byte[] GetIV()
+        {
+            return _iv;
+        }
+
+        public byte[] GetHMAC()
+        {
+            return _hmac;
         }
 
         public byte[] EncryptMessage(string message)
@@ -32,7 +60,8 @@ namespace GUI.Services
             using (Aes aes = Aes.Create())
             {
                 aes.Key = _sharedKey;
-                aes.IV = GenerateIV();
+                aes.GenerateIV();
+                _iv = aes.IV; // Gem IV for senere brug
 
                 byte[] encryptedMessage;
                 using (MemoryStream msEncrypt = new MemoryStream())
@@ -47,11 +76,11 @@ namespace GUI.Services
                     }
                 }
 
-                byte[] hmac = GenerateHMAC(encryptedMessage, aes.IV);
-                byte[] result = new byte[aes.IV.Length + hmac.Length + encryptedMessage.Length];
-                Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
-                Buffer.BlockCopy(hmac, 0, result, aes.IV.Length, hmac.Length);
-                Buffer.BlockCopy(encryptedMessage, 0, result, aes.IV.Length + hmac.Length, encryptedMessage.Length);
+                _hmac = GenerateHMAC(encryptedMessage, _iv); // Generer og gem HMAC for senere brug
+                byte[] result = new byte[_iv.Length + _hmac.Length + encryptedMessage.Length];
+                Buffer.BlockCopy(_iv, 0, result, 0, _iv.Length);
+                Buffer.BlockCopy(_hmac, 0, result, _iv.Length, _hmac.Length);
+                Buffer.BlockCopy(encryptedMessage, 0, result, _iv.Length + _hmac.Length, encryptedMessage.Length);
 
                 return result;
             }
@@ -90,15 +119,6 @@ namespace GUI.Services
             }
         }
 
-        private byte[] GenerateIV()
-        {
-            using (Aes aes = Aes.Create())
-            {
-                aes.GenerateIV();
-                return aes.IV;
-            }
-        }
-
         private byte[] GenerateHMAC(byte[] message, byte[] iv)
         {
             using (HMACSHA256 hmac = new HMACSHA256(_sharedKey))
@@ -110,11 +130,10 @@ namespace GUI.Services
             }
         }
 
-        private bool VerifyHMAC(byte[] message, byte[] hmac, byte[] iv)
+        public bool VerifyHMAC(byte[] message, byte[] hmac, byte[] iv)
         {
             byte[] expectedHMAC = GenerateHMAC(message, iv);
             return CryptographicOperations.FixedTimeEquals(expectedHMAC, hmac);
         }
     }
 }
-

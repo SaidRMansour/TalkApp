@@ -1,0 +1,24 @@
+﻿@page
+@model RegisterConfirmationModel
+@{
+    ViewData["Title"] = "Oprettelses bekræftelse";
+}
+
+<h1>@ViewData["Title"]</h1>
+@{
+    if (@Model.DisplayConfirmAccountLink)
+    {
+    <p>
+        Denne app har i øjeblikket ikke en rigtig email afsender registreret. Se <a href="https://aka.ms/aspaccountconf">disse dokumenter</a> for hvordan du konfigurerer en rigtig email afsender.
+        Normalt ville denne blive sendt via email: <a id="confirm-link" href="@Model.EmailConfirmationUrl">Klik her for at bekræfte din konto</a>
+
+    </p>
+    }
+    else
+    {
+<p>
+    Tjek venligst din email for at bekræfte din konto.
+</p>
+    }
+}
+
