@@ -14,13 +14,16 @@ builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 builder.Services.AddDefaultIdentity<ApplicationUser>(options => options.SignIn.RequireConfirmedAccount = true)
     .AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddControllersWithViews();
-
+builder.Services.AddDataProtection();
 // Add google federed auth
+var googleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
+var googleClientSecret = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET");
+
 builder.Services.AddAuthentication()
    .AddGoogle(googleOptions =>
    {
-       googleOptions.ClientId = builder.Configuration["Authentication:Google:ClientId"];
-       googleOptions.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+       googleOptions.ClientId = googleClientId;
+       googleOptions.ClientSecret = googleClientSecret;
    });
 
 // Configure auth cookies in application 

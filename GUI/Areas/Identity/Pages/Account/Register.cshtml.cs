@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Threading;
@@ -14,6 +15,7 @@ using GUI.Models;
 using GUI.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -31,13 +33,15 @@ namespace GUI.Areas.Identity.Pages.Account
         private readonly IUserEmailStore<ApplicationUser> _emailStore;
         private readonly ILogger<RegisterModel> _logger;
         private readonly IEmailSender _emailSender;
+        private readonly IDataProtectionProvider _dataProtectionProvider;
+
 
         public RegisterModel(
             UserManager<ApplicationUser> userManager,
             IUserStore<ApplicationUser> userStore,
             SignInManager<ApplicationUser> signInManager,
             ILogger<RegisterModel> logger,
-            IEmailSender emailSender)
+            IEmailSender emailSender, IDataProtectionProvider dataProtectionProvider)
         {
             _userManager = userManager;
             _userStore = userStore;
@@ -45,6 +49,7 @@ namespace GUI.Areas.Identity.Pages.Account
             _signInManager = signInManager;
             _logger = logger;
             _emailSender = emailSender;
+            _dataProtectionProvider = dataProtectionProvider;
         }
 
         /// <summary>
@@ -119,11 +124,12 @@ namespace GUI.Areas.Identity.Pages.Account
                 await _userStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
                 await _emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
 
-                // Generate public key for the user
-                var encryptionService = new EncryptionService();
+                var encryptionService = new EncryptionService(_dataProtectionProvider);
                 user.PublicKey = Convert.ToBase64String(encryptionService.GetPublicKey());
+                user.PrivateKey = encryptionService.GetProtectedPrivateKey();
 
                 Console.WriteLine("User public key: " + user.PublicKey);
+
 
                 var result = await _userManager.CreateAsync(user, Input.Password);
 

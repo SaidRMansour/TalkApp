@@ -1,15 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Threading.Tasks;
 using GUI.Data;
 using GUI.Models;
 using GUI.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace GUI.Controllers
 {
@@ -19,12 +20,14 @@ namespace GUI.Controllers
         private readonly ILogger<MessagesController> _logger;
         private readonly ApplicationDbContext _context;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly IDataProtectionProvider _dataProtectionProvider;
 
-        public MessagesController(ILogger<MessagesController> logger, ApplicationDbContext context, UserManager<ApplicationUser> userManager)
+        public MessagesController(ILogger<MessagesController> logger, ApplicationDbContext context, UserManager<ApplicationUser> userManager, IDataProtectionProvider provider)
         {
             _logger = logger;
             _context = context;
             _userManager = userManager;
+            _dataProtectionProvider = provider;
         }
 
         // GET: Messages/Send
@@ -38,7 +41,6 @@ namespace GUI.Controllers
             };
             return View(model);
         }
-
 
         // POST: Messages/Send
         [HttpPost]
@@ -60,10 +62,8 @@ namespace GUI.Controllers
                         return View(model);
                     }
 
-                    var encryptionService = new EncryptionService();
-
+                    var encryptionService = new EncryptionService(_dataProtectionProvider, sender.PrivateKey);
                     var receiverPublicKey = GetPublicKey(receiver.Id);
-                    Console.WriteLine("Receiver Public Key (Base64): " + Convert.ToBase64String(receiverPublicKey));
                     encryptionService.GenerateSharedKey(receiverPublicKey);
 
                     var encryptedMessage = encryptionService.EncryptMessage(model.Message);
@@ -83,7 +83,6 @@ namespace GUI.Controllers
 
                     TempData["SuccessMessage"] = "Beskeden er sendt med succes.";
                     return RedirectToAction(nameof(Receive));
-
                 }
                 catch (Exception ex)
                 {
@@ -111,14 +110,13 @@ namespace GUI.Controllers
                 foreach (var message in messages)
                 {
                     var senderPublicKey = GetPublicKey(message.SenderId);
-                    Console.WriteLine("Sender Public Key (Base64): " + Convert.ToBase64String(senderPublicKey));
-                    var encryptionService = new EncryptionService();
+                    var encryptionService = new EncryptionService(_dataProtectionProvider, GetProtectedPrivateKey(userId));
                     encryptionService.GenerateSharedKey(senderPublicKey);
                     var sender = await _userManager.FindByIdAsync(message.SenderId);
 
                     if (encryptionService.VerifyHMAC(message.EncryptedMessage, message.HMAC, message.IV))
                     {
-                        var decryptedMessage = encryptionService.DecryptMessage(message.EncryptedMessage);
+                        var decryptedMessage = encryptionService.DecryptMessage(message.EncryptedMessage, message.IV, message.HMAC);
                         decryptedMessages.Add(new DecryptedMessageViewModel
                         {
                             SenderName = sender.UserName,
@@ -144,8 +142,6 @@ namespace GUI.Controllers
             }
         }
 
-
-
         private byte[] GetPublicKey(string userId)
         {
             var user = _context.Users.Find(userId);
@@ -156,6 +152,15 @@ namespace GUI.Controllers
             return Convert.FromBase64String(user.PublicKey);
         }
 
+        private string GetProtectedPrivateKey(string userId)
+        {
+            var user = _context.Users.Find(userId);
+            if (user == null || string.IsNullOrEmpty(user.PrivateKey))
+            {
+                throw new InvalidOperationException("User or private key not found.");
+            }
+            return user.PrivateKey;
+        }
     }
 
     public class DecryptedMessageViewModel

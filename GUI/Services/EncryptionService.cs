@@ -1,48 +1,66 @@
 ﻿using System;
 using System.IO;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace GUI.Services
 {
     public class EncryptionService
     {
-        private readonly ECDiffieHellmanCng _diffieHellman;
+        private readonly ECDiffieHellman _diffieHellman;
         private byte[] _sharedKey;
         private byte[] _iv;
         private byte[] _hmac;
+        private readonly IDataProtector _protector;
 
-        public EncryptionService()
+        public EncryptionService(IDataProtectionProvider provider)
         {
-            _diffieHellman = new ECDiffieHellmanCng
-            {
-                KeyDerivationFunction = ECDiffieHellmanKeyDerivationFunction.Hash,
-                HashAlgorithm = CngAlgorithm.Sha256
-            };
+            _diffieHellman = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+            _protector = provider.CreateProtector("PrivateKeyProtector");
+        }
+
+        public EncryptionService(IDataProtectionProvider provider, string protectedPrivateKey)
+        {
+            _protector = provider.CreateProtector("PrivateKeyProtector");
+            var privateKeyBytes = _protector.Unprotect(Convert.FromBase64String(protectedPrivateKey));
+            _diffieHellman = ECDiffieHellman.Create();
+            _diffieHellman.ImportECPrivateKey(privateKeyBytes, out _);
+        }
+
+        public string GetProtectedPrivateKey()
+        {
+            var privateKeyBytes = _diffieHellman.ExportECPrivateKey();
+            return Convert.ToBase64String(_protector.Protect(privateKeyBytes));
         }
 
         public byte[] GetPublicKey()
         {
-            return _diffieHellman.PublicKey.ExportSubjectPublicKeyInfo();
+            return _diffieHellman.ExportSubjectPublicKeyInfo();
         }
 
         public void GenerateSharedKey(byte[] otherPublicKey)
         {
-            using (var otherPartyKey = CngKey.Import(otherPublicKey, CngKeyBlobFormat.EccPublicBlob))
+            try
             {
-                _sharedKey = _diffieHellman.DeriveKeyMaterial(otherPartyKey);
+                var otherPartyPublicKey = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+                otherPartyPublicKey.ImportSubjectPublicKeyInfo(otherPublicKey, out _);
+                _sharedKey = _diffieHellman.DeriveKeyMaterial(otherPartyPublicKey.PublicKey);
+
+                using (var sha256 = SHA256.Create())
+                {
+                    _sharedKey = sha256.ComputeHash(_sharedKey);
+                }
+
+                string sharedKeyBase64 = Convert.ToBase64String(_sharedKey);
+                Console.WriteLine("Shared key (Base64): " + sharedKeyBase64);
+                string sharedKeyHex = BitConverter.ToString(_sharedKey).Replace("-", "");
+                Console.WriteLine("Shared key (Hex): " + sharedKeyHex);
             }
-            using (var sha256 = SHA256.Create())
+            catch (Exception ex)
             {
-                _sharedKey = sha256.ComputeHash(_sharedKey);
+                Console.WriteLine($"Error generating shared key: {ex.Message}");
+                throw new CryptographicException("Failed to generate shared key.", ex);
             }
-
-            // Convert the byte array to a readable string (Base64)
-            string sharedKeyBase64 = Convert.ToBase64String(_sharedKey);
-            Console.WriteLine("Shared key (Base64): " + sharedKeyBase64);
-
-            // Convert the byte array to a readable string (Hexadecimal)
-            string sharedKeyHex = BitConverter.ToString(_sharedKey).Replace("-", "");
-            Console.WriteLine("Shared key (Hex): " + sharedKeyHex);
         }
 
         public byte[] GetIV()
@@ -61,7 +79,7 @@ namespace GUI.Services
             {
                 aes.Key = _sharedKey;
                 aes.GenerateIV();
-                _iv = aes.IV; // Gem IV for senere brug
+                _iv = aes.IV;
 
                 byte[] encryptedMessage;
                 using (MemoryStream msEncrypt = new MemoryStream())
@@ -75,38 +93,26 @@ namespace GUI.Services
                         encryptedMessage = msEncrypt.ToArray();
                     }
                 }
+                _hmac = GenerateHMAC(encryptedMessage, _iv);
 
-                _hmac = GenerateHMAC(encryptedMessage, _iv); // Generer og gem HMAC for senere brug
-                byte[] result = new byte[_iv.Length + _hmac.Length + encryptedMessage.Length];
-                Buffer.BlockCopy(_iv, 0, result, 0, _iv.Length);
-                Buffer.BlockCopy(_hmac, 0, result, _iv.Length, _hmac.Length);
-                Buffer.BlockCopy(encryptedMessage, 0, result, _iv.Length + _hmac.Length, encryptedMessage.Length);
-
-                return result;
+                return encryptedMessage;
             }
         }
 
-        public string DecryptMessage(byte[] encryptedMessage)
+        public string DecryptMessage(byte[] encryptedMessage, byte[] iv, byte[] hmac)
         {
             using (Aes aes = Aes.Create())
             {
                 aes.Key = _sharedKey;
+                aes.IV = iv;
 
-                byte[] iv = new byte[16];
-                byte[] hmac = new byte[32];
-                byte[] cipherText = new byte[encryptedMessage.Length - iv.Length - hmac.Length];
-
-                Buffer.BlockCopy(encryptedMessage, 0, iv, 0, iv.Length);
-                Buffer.BlockCopy(encryptedMessage, iv.Length, hmac, 0, hmac.Length);
-                Buffer.BlockCopy(encryptedMessage, iv.Length + hmac.Length, cipherText, 0, cipherText.Length);
-
-                if (!VerifyHMAC(cipherText, hmac, iv))
+               
+                if (!VerifyHMAC(encryptedMessage, hmac, iv))
                 {
                     throw new CryptographicException("HMAC validering fejlet.");
                 }
 
-                aes.IV = iv;
-                using (MemoryStream msDecrypt = new MemoryStream(cipherText))
+                using (MemoryStream msDecrypt = new MemoryStream(encryptedMessage))
                 {
                     using (CryptoStream csDecrypt = new CryptoStream(msDecrypt, aes.CreateDecryptor(), CryptoStreamMode.Read))
                     {
@@ -121,12 +127,14 @@ namespace GUI.Services
 
         private byte[] GenerateHMAC(byte[] message, byte[] iv)
         {
+          
             using (HMACSHA256 hmac = new HMACSHA256(_sharedKey))
             {
                 byte[] combined = new byte[iv.Length + message.Length];
                 Buffer.BlockCopy(iv, 0, combined, 0, iv.Length);
                 Buffer.BlockCopy(message, 0, combined, iv.Length, message.Length);
-                return hmac.ComputeHash(combined);
+                var hmacValue = hmac.ComputeHash(combined);
+                return hmacValue;
             }
         }
 
