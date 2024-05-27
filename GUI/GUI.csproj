@@ -31,4 +31,8 @@
     <Folder Include="Services\" />
     <Folder Include="Views\Messages\" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Remove="appsettings.json" />
+    <Content Remove="appsettings.Development.json" />
+  </ItemGroup>
 </Project>

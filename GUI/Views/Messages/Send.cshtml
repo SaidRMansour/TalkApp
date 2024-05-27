@@ -5,19 +5,30 @@
 
 <h1>Send Besked</h1>
 
-<form asp-action="Send">
-    <div class="form-group">
-        <label for="receiverId">Modtager</label>
-        <select id="receiverId" name="receiverId" class="form-control" required>
-            @foreach (var user in Model.Users)
-            {
-                <option value="@user.Id">@user.UserName</option>
-            }
-        </select>
+<div class="list-group">
+    @foreach (var user in Model.Users)
+    {
+        <a href="@Url.Action("Thread", "Messages", new { userId = user.Id })" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+            @user.UserName
+            <button class="btn btn-primary">Se tråd</button>
+        </a>
+    }
+</div>
+<br />
+
+<h1>Seneste aktivitet</h1>
+@if (Model.RecentMessage != null)
+{
+    <div class="alert alert-info d-flex justify-content-between align-items-center">
+        <div>
+            Seneste aktivitet i chatten med <strong>@Model.RecentMessage.SenderName</strong> kl. @Model.RecentMessage.Timestamp.
+        </div>
+        <a href="@Url.Action("Thread", "Messages", new { userId = Model.RecentMessage.UserId })" class="btn btn-primary">Se chat</a>
     </div>
-    <div class="form-group">
-        <label for="message">Besked</label>
-        <textarea class="form-control" id="message" name="message" required></textarea>
+}
+else
+{
+    <div class="alert alert-info">
+        Ingen seneste beskeder.
     </div>
-    <button type="submit" class="btn btn-primary">Send</button>
-</form>
+}

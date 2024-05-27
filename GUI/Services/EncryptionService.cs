@@ -13,12 +13,14 @@ namespace GUI.Services
         private byte[] _hmac;
         private readonly IDataProtector _protector;
 
+        // Initialiserer en ny instans af EncryptionService og genererer en Diffie-Hellman nøglepar
         public EncryptionService(IDataProtectionProvider provider)
         {
             _diffieHellman = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
             _protector = provider.CreateProtector("PrivateKeyProtector");
         }
 
+        // Initialiserer en ny instans af EncryptionService med en beskyttet privat nøgle
         public EncryptionService(IDataProtectionProvider provider, string protectedPrivateKey)
         {
             _protector = provider.CreateProtector("PrivateKeyProtector");
@@ -27,17 +29,20 @@ namespace GUI.Services
             _diffieHellman.ImportECPrivateKey(privateKeyBytes, out _);
         }
 
+        // Henter og beskytter den private nøgle
         public string GetProtectedPrivateKey()
         {
             var privateKeyBytes = _diffieHellman.ExportECPrivateKey();
             return Convert.ToBase64String(_protector.Protect(privateKeyBytes));
         }
 
+        // Henter den offentlige nøgle
         public byte[] GetPublicKey()
         {
             return _diffieHellman.ExportSubjectPublicKeyInfo();
         }
 
+        // Genererer en delt nøgle baseret på en anden parts offentlige nøgle
         public void GenerateSharedKey(byte[] otherPublicKey)
         {
             try
@@ -50,29 +55,26 @@ namespace GUI.Services
                 {
                     _sharedKey = sha256.ComputeHash(_sharedKey);
                 }
-
-                string sharedKeyBase64 = Convert.ToBase64String(_sharedKey);
-                Console.WriteLine("Shared key (Base64): " + sharedKeyBase64);
-                string sharedKeyHex = BitConverter.ToString(_sharedKey).Replace("-", "");
-                Console.WriteLine("Shared key (Hex): " + sharedKeyHex);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error generating shared key: {ex.Message}");
-                throw new CryptographicException("Failed to generate shared key.", ex);
+                throw new CryptographicException("Kunne ikke generere delt nøgle.", ex);
             }
         }
 
+        // Henter initialiseringsvektoren (IV)
         public byte[] GetIV()
         {
             return _iv;
         }
 
+        // Henter HMAC
         public byte[] GetHMAC()
         {
             return _hmac;
         }
 
+        // Krypterer en besked ved hjælp af AES
         public byte[] EncryptMessage(string message)
         {
             using (Aes aes = Aes.Create())
@@ -99,6 +101,7 @@ namespace GUI.Services
             }
         }
 
+        // Dekrypterer en besked ved hjælp af AES og verificerer HMAC
         public string DecryptMessage(byte[] encryptedMessage, byte[] iv, byte[] hmac)
         {
             using (Aes aes = Aes.Create())
@@ -106,7 +109,7 @@ namespace GUI.Services
                 aes.Key = _sharedKey;
                 aes.IV = iv;
 
-               
+                // Verificerer HMAC for at sikre beskedens integritet
                 if (!VerifyHMAC(encryptedMessage, hmac, iv))
                 {
                     throw new CryptographicException("HMAC validering fejlet.");
@@ -125,9 +128,9 @@ namespace GUI.Services
             }
         }
 
+        // Genererer en HMAC for en besked og initialiseringsvektoren (IV)
         private byte[] GenerateHMAC(byte[] message, byte[] iv)
         {
-          
             using (HMACSHA256 hmac = new HMACSHA256(_sharedKey))
             {
                 byte[] combined = new byte[iv.Length + message.Length];
@@ -138,6 +141,7 @@ namespace GUI.Services
             }
         }
 
+        // Verificerer HMAC for at sikre beskedens integritet
         public bool VerifyHMAC(byte[] message, byte[] hmac, byte[] iv)
         {
             byte[] expectedHMAC = GenerateHMAC(message, iv);

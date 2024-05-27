@@ -1,0 +1,34 @@
+﻿@model GUI.Models.ChatThreadViewModel
+@{
+    ViewData["Title"] = "Chat med " + Model.ReceiverName;
+}
+
+<h1>@ViewData["Title"]</h1>
+<hr />
+
+<div class="chat-thread">
+    <div class="messages">
+        @foreach (var message in Model.Messages)
+        {
+            var isMe = message.SenderName == "Mig";
+            <div class="message @(isMe ? "sent" : "received")">
+                <strong style="color: @(isMe ? "green" : "black")">@message.SenderName (@message.Timestamp):</strong>
+                <p>@message.Content</p>
+            </div>
+        }
+    </div>
+
+    <form asp-action="SendMessage" method="post" class="send-message-form">
+        <input type="hidden" name="ReceiverId" value="@Model.ReceiverId" />
+        <div class="form-group">
+            <div style="margin: 20px;">
+                <label for="message">Besked</label>
+            </div>
+            <textarea class="form-control" id="message" name="message" required></textarea>
+        </div>
+        <div class="button-container">
+            <button type="submit" class="btn btn-primary w-33">Send</button>
+        </div>
+    </form>
+</div>
+

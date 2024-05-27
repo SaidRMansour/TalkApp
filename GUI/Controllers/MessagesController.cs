@@ -34,39 +34,67 @@ namespace GUI.Controllers
         public async Task<IActionResult> Send()
         {
             var users = await _userManager.Users.ToListAsync();
-            users.Remove(await _userManager.GetUserAsync(User));
+            var currentUser = await _userManager.GetUserAsync(User);
+            users.Remove(currentUser);
+
             var model = new SendMessageViewModel
             {
-                Users = users
+                Users = users,
+
+                // Tilføjer sidste sendte besked
+                RecentMessage = await GetRecentMessageAsync(currentUser.Id)
             };
+
             return View(model);
         }
 
-        // POST: Messages/Send
+        private async Task<RecentMessageViewModel> GetRecentMessageAsync(string userId)
+        {
+            var recentMessage = await _context.Messages
+                .Where(m => m.SenderId == userId || m.ReceiverId == userId)
+                .OrderByDescending(m => m.Timestamp)
+                .FirstOrDefaultAsync();
+
+            if (recentMessage != null)
+            {
+                var otherUserId = recentMessage.SenderId == userId ? recentMessage.ReceiverId : recentMessage.SenderId;
+                var otherUser = await _userManager.FindByIdAsync(otherUserId);
+
+                return new RecentMessageViewModel
+                {
+                    SenderName = otherUser.UserName,
+                    Timestamp = recentMessage.Timestamp.ToString("HH:mm"),
+                    UserId = otherUser.Id
+                };
+            }
+
+            return null;
+        }
+
+
+
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Send(SendMessageViewModel model)
+        public async Task<IActionResult> SendMessage(string receiverId, string message)
         {
             if (ModelState.IsValid)
             {
                 try
                 {
                     var sender = await _userManager.GetUserAsync(User);
-                    var receiver = await _userManager.FindByIdAsync(model.ReceiverId);
+                    var receiver = await _userManager.FindByIdAsync(receiverId);
 
                     if (sender == null || receiver == null)
                     {
                         ModelState.AddModelError(string.Empty, "Afsender eller modtager ikke fundet.");
-                        model.Users = await _userManager.Users.ToListAsync();
-                        model.Users.Remove(sender);
-                        return View(model);
+                        return RedirectToAction(nameof(Thread), new { userId = receiverId });
                     }
 
                     var encryptionService = new EncryptionService(_dataProtectionProvider, sender.PrivateKey);
                     var receiverPublicKey = GetPublicKey(receiver.Id);
                     encryptionService.GenerateSharedKey(receiverPublicKey);
 
-                    var encryptedMessage = encryptionService.EncryptMessage(model.Message);
+                    var encryptedMessage = encryptionService.EncryptMessage(message);
 
                     var newMessage = new Message
                     {
@@ -82,7 +110,7 @@ namespace GUI.Controllers
                     await _context.SaveChangesAsync();
 
                     TempData["SuccessMessage"] = "Beskeden er sendt med succes.";
-                    return RedirectToAction(nameof(Receive));
+                    return RedirectToAction(nameof(Thread), new { userId = receiverId });
                 }
                 catch (Exception ex)
                 {
@@ -90,58 +118,75 @@ namespace GUI.Controllers
                 }
             }
 
-            model.Users = await _userManager.Users.ToListAsync();
-            model.Users.Remove(await _userManager.GetUserAsync(User)); // Re-add the list of users
+            return RedirectToAction(nameof(Thread), new { userId = receiverId });
+        }
+
+
+        // GET: Messages/Thread/{userId}
+        public async Task<IActionResult> Thread(string userId)
+        {
+            var currentUserId = _userManager.GetUserId(User);
+            var messages = await _context.Messages
+                .Where(m => (m.SenderId == currentUserId && m.ReceiverId == userId) ||
+                            (m.SenderId == userId && m.ReceiverId == currentUserId))
+                .OrderBy(m => m.Timestamp)
+                .ToListAsync();
+
+            var decryptedMessages = new List<DecryptedMessageViewModel>();
+            foreach (var message in messages)
+            {
+                bool isMe = message.SenderId == currentUserId;
+
+                var encryptionService = new EncryptionService(_dataProtectionProvider, GetProtectedPrivateKey(currentUserId));
+
+                if (message.SenderId == currentUserId)
+                {
+                    // Dekrypter beskeder sendt af den nuværende bruger
+                    encryptionService.GenerateSharedKey(GetPublicKey(userId));
+                }
+                else
+                {
+                    // Dekrypter beskeder modtaget fra den anden bruger
+                    encryptionService.GenerateSharedKey(GetPublicKey(message.SenderId));
+                }
+
+                var sender = await _userManager.FindByIdAsync(message.SenderId);
+                if (encryptionService.VerifyHMAC(message.EncryptedMessage, message.HMAC, message.IV))
+                {
+                    var decryptedMessage = encryptionService.DecryptMessage(message.EncryptedMessage, message.IV, message.HMAC);
+                    decryptedMessages.Add(new DecryptedMessageViewModel
+                    {
+                        // Vis mine egne beskeder som "Me" i stedet for brugernavn
+                        SenderName = isMe ? "Mig" : sender.UserName, 
+                        Content = decryptedMessage,
+                        Timestamp = message.Timestamp.ToString("HH:mm")
+                    });
+                    
+                }
+                else
+                {
+                    decryptedMessages.Add(new DecryptedMessageViewModel
+                    {
+                        SenderName = isMe ? "Mig" : sender.UserName,
+                        Content = "HMAC validering fejlet.",
+                        Timestamp = message.Timestamp.ToString("HH:mm")
+
+                    });
+                }
+            }
+
+            var model = new ChatThreadViewModel
+            {
+                Messages = decryptedMessages,
+                ReceiverId = userId,
+                ReceiverName = (await _userManager.FindByIdAsync(userId)).UserName
+            };
+
             return View(model);
         }
 
-        // GET: Messages/Receive
-        public async Task<IActionResult> Receive()
-        {
-            try
-            {
-                var userId = _userManager.GetUserId(User);
-                var messages = await _context.Messages
-                    .Where(m => m.ReceiverId == userId)
-                    .ToListAsync();
 
-                var decryptedMessages = new List<DecryptedMessageViewModel>();
-
-                foreach (var message in messages)
-                {
-                    var senderPublicKey = GetPublicKey(message.SenderId);
-                    var encryptionService = new EncryptionService(_dataProtectionProvider, GetProtectedPrivateKey(userId));
-                    encryptionService.GenerateSharedKey(senderPublicKey);
-                    var sender = await _userManager.FindByIdAsync(message.SenderId);
-
-                    if (encryptionService.VerifyHMAC(message.EncryptedMessage, message.HMAC, message.IV))
-                    {
-                        var decryptedMessage = encryptionService.DecryptMessage(message.EncryptedMessage, message.IV, message.HMAC);
-                        decryptedMessages.Add(new DecryptedMessageViewModel
-                        {
-                            SenderName = sender.UserName,
-                            Content = decryptedMessage
-                        });
-                    }
-                    else
-                    {
-                        decryptedMessages.Add(new DecryptedMessageViewModel
-                        {
-                            SenderName = sender.UserName,
-                            Content = "HMAC validering fejlet."
-                        });
-                    }
-                }
-
-                return View(decryptedMessages);
-            }
-            catch (Exception ex)
-            {
-                ModelState.AddModelError(string.Empty, $"Der opstod en fejl under modtagelse af beskeden: {ex.Message}");
-                return View(new List<DecryptedMessageViewModel>());
-            }
-        }
-
+        
         private byte[] GetPublicKey(string userId)
         {
             var user = _context.Users.Find(userId);
@@ -163,10 +208,5 @@ namespace GUI.Controllers
         }
     }
 
-    public class DecryptedMessageViewModel
-    {
-        public string SenderId { get; set; }
-        public string Content { get; set; }
-        public string SenderName { get; set; }
-    }
+    
 }
